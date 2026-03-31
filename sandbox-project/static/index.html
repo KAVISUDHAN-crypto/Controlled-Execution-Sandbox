@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controlled Execution Sandbox</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f0f0f; color: #e0e0e0; font-family: 'Courier New', monospace; min-height: 100vh; }
+  header { background: #1a1a1a; border-bottom: 1px solid #333; padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 16px; color: #00ff88; letter-spacing: 1px; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ff4444; }
+  .status-dot.online { background: #00ff88; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .panel { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; overflow: hidden; }
+  .panel-header { background: #222; padding: 10px 16px; font-size: 12px; color: #888; border-bottom: 1px solid #2a2a2a; display: flex; justify-content: space-between; align-items: center; }
+  .panel-header span { color: #00ff88; }
+  textarea { width: 100%; height: 200px; background: #0f0f0f; border: none; color: #e0e0e0; font-family: 'Courier New', monospace; font-size: 13px; padding: 14px; resize: vertical; outline: none; }
+  .btn-row { padding: 10px 14px; display: flex; gap: 8px; flex-wrap: wrap; background: #1a1a1a; border-top: 1px solid #2a2a2a; }
+  button { padding: 7px 16px; border-radius: 5px; border: 1px solid #333; font-family: 'Courier New', monospace; font-size: 12px; cursor: pointer; transition: 0.15s; }
+  .btn-run { background: #003320; color: #00ff88; border-color: #00ff88; }
+  .btn-run:hover { background: #005530; }
+  .btn-clear { background: transparent; color: #888; }
+  .btn-clear:hover { color: #ccc; }
+  .btn-preset { background: transparent; color: #aaa; font-size: 11px; }
+  .btn-preset:hover { color: #fff; background: #222; }
+  .btn-unsafe { background: transparent; color: #ff6b6b; border-color: #552222; font-size: 11px; }
+  .btn-unsafe:hover { background: #2a1010; }
+  .output { height: 200px; overflow-y: auto; padding: 14px; font-size: 12px; line-height: 1.8; background: #0a0a0a; }
+  .out-ok { color: #00ff88; }
+  .out-err { color: #ff4444; }
+  .out-warn { color: #ffaa00; }
+  .out-info { color: #888; }
+  .out-result { color: #88ccff; }
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #2a2a2a; }
+  .stat { background: #1a1a1a; padding: 14px; text-align: center; }
+  .stat-n { font-size: 26px; font-weight: bold; }
+  .stat-l { font-size: 11px; color: #666; margin-top: 3px; }
+  .s-ok { color: #00ff88; }
+  .s-err { color: #ff4444; }
+  .s-warn { color: #ffaa00; }
+  .viol-log { height: 180px; overflow-y: auto; padding: 10px; background: #0a0a0a; }
+  .viol-item { border-left: 3px solid #ff4444; padding: 7px 10px; margin-bottom: 7px; background: #1a0a0a; border-radius: 0 4px 4px 0; }
+  .viol-item.CRITICAL { border-color: #ff0000; background: #200000; }
+  .viol-item.MEDIUM { border-color: #ffaa00; }
+  .viol-top { display: flex; justify-content: space-between; font-size: 11px; }
+  .viol-type { color: #ff6b6b; font-weight: bold; }
+  .viol-time { color: #555; }
+  .viol-cmd { font-size: 11px; color: #886666; margin-top: 2px; word-break: break-all; }
+  .badge { font-size: 10px; padding: 2px 7px; border-radius: 3px; margin-left: 6px; }
+  .badge-crit { background: #400; color: #ff6666; }
+  .badge-high { background: #300; color: #ff4444; }
+  .badge-med { background: #330; color: #ffaa00; }
+  @media (max-width: 900px) { .container { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="status-dot" id="dot"></div>
+  <h1>CONTROLLED EXECUTION SANDBOX</h1>
+  <span style="font-size:11px;color:#555;margin-left:auto" id="serverStatus">Connecting...</span>
+</header>
+
+<div class="container">
+  <div class="panel">
+    <div class="panel-header">INPUT <span id="charCount">0 / 5000 chars</span></div>
+    <textarea id="codeInput" placeholder="# Enter Python code here&#10;print('Hello, Sandbox!')&#10;x = 10 + 20&#10;print(x)" oninput="updateCount()"></textarea>
+    <div class="btn-row">
+      <button class="btn-run" onclick="runCode()">&#9654; RUN</button>
+      <button class="btn-clear" onclick="clearAll()">CLEAR</button>
+      <span style="font-size:11px;color:#555;margin:auto 4px">Safe:</span>
+      <button class="btn-preset" onclick="setCode('print(sum(range(1, 11)))')">sum(range)</button>
+      <button class="btn-preset" onclick="setCode('for i in range(5):\n    print(f\'Line {i+1}\')')">for loop</button>
+      <button class="btn-preset" onclick="setCode('nums = [3,1,4,1,5,9,2,6]\nprint(sorted(nums))\nprint(max(nums))')">sort/max</button>
+    </div>
+    <div class="btn-row" style="border-top:1px solid #2a1010">
+      <span style="font-size:11px;color:#553333;margin:auto 4px">Unsafe:</span>
+      <button class="btn-unsafe" onclick="setCode('import os\nos.system(\'id\')')">import os</button>
+      <button class="btn-unsafe" onclick="setCode('open(\'/etc/passwd\').read()')">read passwd</button>
+      <button class="btn-unsafe" onclick="setCode('while True:\n    pass')">infinite loop</button>
+      <button class="btn-unsafe" onclick="setCode('import subprocess\nsubprocess.call([\'bash\'])')">subprocess</button>
+      <button class="btn-unsafe" onclick="setCode('__import__(\'socket\')')">__import__</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">OUTPUT <span id="execTime"></span></div>
+    <div class="output" id="outputLog">
+      <span class="out-info">Sandbox ready. Submit code to execute.</span>
+    </div>
+    <div class="panel-header" style="margin-top:1px">VIOLATION LOG</div>
+    <div class="viol-log" id="violLog">
+      <span class="out-info" style="font-size:11px">No violations recorded.</span>
+    </div>
+  </div>
+</div>
+
+<div style="padding: 0 20px 20px; max-width:1400px; margin:0 auto;">
+  <div class="panel">
+    <div class="stats-grid">
+      <div class="stat"><div class="stat-n s-ok" id="st-total">0</div><div class="stat-l">TOTAL RUNS</div></div>
+      <div class="stat"><div class="stat-n s-ok" id="st-allowed">0</div><div class="stat-l">ALLOWED</div></div>
+      <div class="stat"><div class="stat-n s-err" id="st-blocked">0</div><div class="stat-l">BLOCKED</div></div>
+      <div class="stat"><div class="stat-n s-warn" id="st-timeout">0</div><div class="stat-l">TIMEOUTS</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const BASE = 'http://127.0.0.1:5000';
+
+  function updateCount() {
+    const v = document.getElementById('codeInput').value.length;
+    document.getElementById('charCount').textContent = v + ' / 5000 chars';
+  }
+
+  function setCode(c) {
+    document.getElementById('codeInput').value = c;
+    updateCount();
+  }
+
+  function clearAll() {
+    document.getElementById('codeInput').value = '';
+    document.getElementById('outputLog').innerHTML = '<span class="out-info">Cleared.</span>';
+    updateCount();
+  }
+
+  function log(msg, cls) {
+    const el = document.getElementById('outputLog');
+    el.innerHTML += `<div class="${cls}">${msg}</div>`;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function addViolation(type, severity, detail, code) {
+    const el = document.getElementById('violLog');
+    if (el.querySelector('.out-info')) el.innerHTML = '';
+    const sev = severity || 'HIGH';
+    const badge = sev === 'CRITICAL' ? 'badge-crit' : sev === 'HIGH' ? 'badge-high' : 'badge-med';
+    el.innerHTML = `
+      <div class="viol-item ${sev}">
+        <div class="viol-top">
+          <span class="viol-type">${type} <span class="badge ${badge}">${sev}</span></span>
+          <span class="viol-time">${new Date().toLocaleTimeString()}</span>
+        </div>
+        <div class="viol-cmd">${detail}</div>
+        <div class="viol-cmd" style="color:#664444;margin-top:2px">&#9658; ${code.substring(0,80)}${code.length>80?'...':''}</div>
+      </div>` + el.innerHTML;
+  }
+
+  async function fetchStats() {
+    try {
+      const r = await fetch(BASE + '/stats');
+      const d = await r.json();
+      document.getElementById('st-total').textContent = d.total;
+      document.getElementById('st-allowed').textContent = d.allowed;
+      document.getElementById('st-blocked').textContent = d.blocked;
+      document.getElementById('st-timeout').textContent = d.timeout;
+    } catch(e) {}
+  }
+
+  async function runCode() {
+    const code = document.getElementById('codeInput').value.trim();
+    if (!code) return;
+
+    document.getElementById('outputLog').innerHTML = '';
+    log('$ Submitting to sandbox...', 'out-info');
+    document.getElementById('execTime').textContent = '';
+
+    try {
+      const resp = await fetch(BASE + '/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+
+      const data = await resp.json();
+
+      if (data.status === 'blocked') {
+        log(`[BLOCKED] ${data.violation}`, 'out-err');
+        log(`Severity : ${data.severity}`, 'out-err');
+        log(`Reason   : ${data.message}`, 'out-err');
+        log('Execution terminated. Input rejected.', 'out-err');
+        addViolation(data.violation, data.severity, data.message, code);
+      } else if (data.status === 'timeout') {
+        log('[TIMEOUT] Execution exceeded 5 second limit.', 'out-warn');
+        log('Process killed by watchdog.', 'out-warn');
+      } else if (data.status === 'runtime_error') {
+        log('[RUNTIME ERROR]', 'out-warn');
+        log(data.error, 'out-warn');
+      } else {
+        log('[OK] Execution permitted and completed.', 'out-ok');
+        if (data.output) {
+          data.output.split('\n').forEach(line => {
+            if (line) log('&#9658; ' + line, 'out-result');
+          });
+        }
+        if (data.time_ms !== undefined) {
+          document.getElementById('execTime').textContent = data.time_ms + 'ms';
+        }
+      }
+    } catch(e) {
+      log('[ERROR] ' + e.message, 'out-err');
+      log('Make sure server.py is running on port 5000', 'out-info');
+    }
+
+    fetchStats();
+  }
+
+  fetch(BASE + '/health')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('dot').classList.add('online');
+      document.getElementById('serverStatus').textContent = 'Server Online';
+      document.getElementById('serverStatus').style.color = '#00ff88';
+    })
+    .catch(() => {
+      document.getElementById('dot').style.background = '#ff4444';
+      document.getElementById('serverStatus').textContent = 'Server Offline';
+      document.getElementById('serverStatus').style.color = '#ff4444';
+    });
+
+  fetchStats();
+  setInterval(fetchStats, 3000);
+</script>
+</body>
+</html>
+
