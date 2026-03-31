@@ -96,7 +96,7 @@ sandbox-project/
 
 ### Step 1 — Clone the repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/sandbox-project.git
+git clone https://github.com/KAVISUDHAN-crypto/sandbox-project.git
 cd sandbox-project
 ```
 
